@@ -32,7 +32,7 @@ Namespace My
 
         <Global.System.Diagnostics.DebuggerStepThroughAttribute()> _
         Protected Overrides Sub OnCreateMainForm()
-            Me.MainForm = Global.Intersect_GUI_Editor.Form1
+            Me.MainForm = Global.Intersect_GUI_Editor.DesignerForm
         End Sub
     End Class
 End Namespace

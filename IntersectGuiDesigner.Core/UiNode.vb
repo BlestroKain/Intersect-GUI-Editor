@@ -26,6 +26,24 @@ Namespace IntersectGuiDesigner.Core
 
         Public ReadOnly Property Children As IList(Of UiNode)
 
+        Public Function GetBoolean(propertyName As String) As Boolean?
+            If String.IsNullOrWhiteSpace(propertyName) Then
+                Throw New ArgumentException("Property name is required.", NameOf(propertyName))
+            End If
+
+            Dim token = Raw(propertyName)
+            If token Is Nothing Then
+                Return Nothing
+            End If
+
+            Dim result As Boolean
+            If Boolean.TryParse(token.ToString(), result) Then
+                Return result
+            End If
+
+            Return Nothing
+        End Function
+
         Public Function GetBounds() As GuiBounds?
             Dim bounds = Raw("Bounds")
             If bounds Is Nothing Then
@@ -71,6 +89,26 @@ Namespace IntersectGuiDesigner.Core
             End If
 
             Raw(propertyName) = value
+        End Sub
+
+        Public Sub SetBoolean(propertyName As String, value As Boolean?)
+            If String.IsNullOrWhiteSpace(propertyName) Then
+                Throw New ArgumentException("Property name is required.", NameOf(propertyName))
+            End If
+
+            If value.HasValue Then
+                Raw(propertyName) = value.Value
+            Else
+                Raw.Remove(propertyName)
+            End If
+        End Sub
+
+        Public Sub RemoveProperty(propertyName As String)
+            If String.IsNullOrWhiteSpace(propertyName) Then
+                Throw New ArgumentException("Property name is required.", NameOf(propertyName))
+            End If
+
+            Raw.Remove(propertyName)
         End Sub
 
         Public Function ToJObject() As JObject

@@ -25,6 +25,14 @@ Namespace IntersectGuiDesigner.Core
 
         Public Property Root As UiNode
 
+        Public Sub SyncFromRoot()
+            If Root Is Nothing Then
+                Return
+            End If
+
+            _document = Root.ToJObject()
+        End Sub
+
         Public Function Load(path As String) As JObject
             If String.IsNullOrWhiteSpace(path) Then
                 Throw New ArgumentException("A valid file path is required.", NameOf(path))
@@ -47,7 +55,7 @@ Namespace IntersectGuiDesigner.Core
             End If
 
             If Root IsNot Nothing Then
-                Document = Root.ToJObject()
+                SyncFromRoot()
             End If
 
             If String.IsNullOrWhiteSpace(path) Then
