@@ -1,4 +1,6 @@
-﻿Imports System.IO
+Imports System.IO
+Imports IntersectGuiDesigner.Core
+Imports Newtonsoft.Json.Linq
 
 Module Functions
     Private _rnd As New Random()
@@ -8,7 +10,7 @@ Module Functions
     End Function
 
     Public Sub ReloadText(ByVal windowname As String, ByVal type As String)
-        Dim tempPath As String = Application.StartupPath & "\temp\"
+        Dim tempPath As String = Path.Combine(Application.StartupPath, "temp") & Path.DirectorySeparatorChar
         Dim tempFileName As String
 
         tempFileName = RandomNumber(10000, 10000000)
@@ -17,12 +19,20 @@ Module Functions
 
         Select Case type
             Case "treeview"
-                Using writer = New FileStream(tempPath & "tmp_" & tempFileName & ".json", FileMode.Create)
+                Dim tempFile = tempPath & "tmp_" & tempFileName & ".json"
+
+                Using writer = New FileStream(tempFile, FileMode.Create)
                     Form1.JTokenTreeUserControl1.SaveJson(writer)
                 End Using
+
+                Dim document = New GuiJsonDocument()
+                document.Load(tempFile)
+                Form1.fullJson.Text = document.Document.ToString(Newtonsoft.Json.Formatting.Indented)
             Case "text"
-                My.Computer.FileSystem.WriteAllText(tempPath & "tmp_" & tempFileName & ".json", Form1.fullJson.Text,
-                                                    False)
+                Dim document = New GuiJsonDocument()
+                document.Document = JObject.Parse(Form1.fullJson.Text)
+                document.Save(tempPath & "tmp_" & tempFileName & ".json")
+                Form1.fullJson.Text = document.Document.ToString(Newtonsoft.Json.Formatting.Indented)
                 Form1.JTokenTreeUserControl1.SetJsonSource(Form1.fullJson.Text)
         End Select
 
