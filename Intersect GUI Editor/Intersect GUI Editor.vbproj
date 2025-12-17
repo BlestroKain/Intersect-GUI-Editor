@@ -86,6 +86,12 @@
     <Import Include="System.Threading.Tasks" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\IntersectGuiDesigner.Core\IntersectGuiDesigner.Core.vbproj">
+      <Project>{BFC8FD67-2F52-4B13-83D9-D7EB8C5BCB72}</Project>
+      <Name>IntersectGuiDesigner.Core</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="Functions.vb" />
     <Compile Include="JSON Deserializers\CommonControlsGUI.vb" />
     <Compile Include="JSON Deserializers\game\BagItemGUI.vb" />
