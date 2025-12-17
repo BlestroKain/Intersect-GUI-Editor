@@ -4,7 +4,26 @@ Imports Newtonsoft.Json.Linq
 
 Namespace IntersectGuiDesigner.Core
     Public Class GuiJsonDocument
+        Private _document As JObject
+        Private _rootName As String = "Root"
+
         Public Property Document As JObject
+            Get
+                Return _document
+            End Get
+            Set(value As JObject)
+                _document = value
+
+                If value Is Nothing Then
+                    Root = Nothing
+                    Return
+                End If
+
+                Root = UiNode.BuildTree(value, _rootName)
+            End Set
+        End Property
+
+        Public Property Root As UiNode
 
         Public Function Load(path As String) As JObject
             If String.IsNullOrWhiteSpace(path) Then
@@ -17,6 +36,7 @@ Namespace IntersectGuiDesigner.Core
                 jsonText = reader.ReadToEnd()
             End Using
 
+            _rootName = Path.GetFileNameWithoutExtension(path)
             Document = JObject.Parse(jsonText)
             Return Document
         End Function
@@ -24,6 +44,10 @@ Namespace IntersectGuiDesigner.Core
         Public Sub Save(path As String)
             If Document Is Nothing Then
                 Throw New InvalidOperationException("No JSON document has been loaded to save.")
+            End If
+
+            If Root IsNot Nothing Then
+                Document = Root.ToJObject()
             End If
 
             If String.IsNullOrWhiteSpace(path) Then

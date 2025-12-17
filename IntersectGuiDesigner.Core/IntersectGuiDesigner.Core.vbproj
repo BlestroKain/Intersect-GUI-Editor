@@ -57,6 +57,7 @@
   <ItemGroup>
     <Compile Include="GuiJsonDocument.vb" />
     <Compile Include="GuiTypes.vb" />
+    <Compile Include="UiNode.vb" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.VisualBasic.targets" />
 </Project>
