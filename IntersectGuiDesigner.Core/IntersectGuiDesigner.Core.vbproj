@@ -51,6 +51,7 @@
     <Compile Include="GuiJsonDocument.vb" />
     <Compile Include="GuiValueParser.vb" />
     <Compile Include="UiNode.vb" />
+    <Compile Include="UiNodeTreeBuilder.vb" />
     <Compile Include="My Project\AssemblyInfo.vb" />
   </ItemGroup>
   <ItemGroup>
