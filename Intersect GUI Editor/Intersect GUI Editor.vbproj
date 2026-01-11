@@ -73,6 +73,12 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\IntersectGuiDesigner.Core\IntersectGuiDesigner.Core.vbproj">
+      <Project>{DD42A17A-67D1-41DD-9CFA-335B1E5C53B1}</Project>
+      <Name>IntersectGuiDesigner.Core</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
     <Import Include="Microsoft.VisualBasic" />
     <Import Include="System" />
     <Import Include="System.Collections" />
