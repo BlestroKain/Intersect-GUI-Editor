@@ -193,6 +193,8 @@ Public Class Form1
 
         AddHandler _uiCanvasSizeComboBox.SelectedIndexChanged, AddressOf UiCanvasSizeComboBox_SelectedIndexChanged
         AddHandler _uiCanvasControl.NodeSelected, AddressOf UiCanvasControl_NodeSelected
+        AddHandler _uiCanvasControl.NodeBoundsCommitted, AddressOf UiCanvasControl_NodeBoundsCommitted
+        AddHandler _uiCanvasControl.NodeInteractionBlocked, AddressOf UiCanvasControl_NodeInteractionBlocked
     End Sub
 
     Private Function AddPropertyRow(caption As String, control As Control) As Label
@@ -238,6 +240,23 @@ Public Class Form1
 
     Private Sub UiCanvasControl_NodeSelected(sender As Object, e As UiCanvasControl.UiNodeSelectedEventArgs)
         SetSelectedUiNode(e.Node, True)
+    End Sub
+
+    Private Sub UiCanvasControl_NodeBoundsCommitted(sender As Object, e As UiCanvasControl.UiNodeBoundsChangedEventArgs)
+        If _uiSelectedNode Is Nothing OrElse e.Node Is Nothing Then
+            Return
+        End If
+
+        LoadUiNodeProperties()
+        PersistUiNodeChanges()
+    End Sub
+
+    Private Sub UiCanvasControl_NodeInteractionBlocked(sender As Object, e As UiCanvasControl.UiCanvasInteractionEventArgs)
+        If e Is Nothing Then
+            Return
+        End If
+
+        StatusText("[UI]     " & e.Message)
     End Sub
 
     Private Sub SetSelectedUiNode(node As UiNode, syncTree As Boolean)
