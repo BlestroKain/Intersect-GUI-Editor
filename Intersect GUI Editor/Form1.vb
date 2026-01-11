@@ -30,6 +30,13 @@ Public Class Form1
     Private _uiPropertyTable As TableLayoutPanel
     Private _uiPropertyLoading As Boolean
     Private _uiSuppressSync As Boolean
+    Private _uiSelectionSync As Boolean
+    Private _uiCanvasHost As Panel
+    Private _uiCanvasToolbar As FlowLayoutPanel
+    Private _uiCanvasSizeLabel As Label
+    Private _uiCanvasSizeComboBox As ComboBox
+    Private _uiCanvasScrollPanel As Panel
+    Private _uiCanvasControl As UiCanvasControl
     Private _boundsLabel As Label
     Private _boundsTextBox As TextBox
     Private _dockLabel As Label
@@ -135,6 +142,59 @@ Public Class Form1
         AddHandler _textColorTextBox.Leave, AddressOf TextColorTextBox_Leave
     End Sub
 
+    Private Sub InitializeUiCanvas()
+        If toolSplitContainer Is Nothing Then
+            Return
+        End If
+
+        toolSplitContainer.Panel2.AutoScroll = False
+
+        _uiCanvasHost = New Panel()
+        _uiCanvasHost.Dock = DockStyle.Fill
+        _uiCanvasHost.BackColor = Color.FromArgb(17, 24, 34)
+
+        _uiCanvasToolbar = New FlowLayoutPanel()
+        _uiCanvasToolbar.Dock = DockStyle.Top
+        _uiCanvasToolbar.Height = 34
+        _uiCanvasToolbar.Padding = New Padding(6, 6, 6, 6)
+        _uiCanvasToolbar.BackColor = Color.FromArgb(27, 36, 49)
+        _uiCanvasToolbar.WrapContents = False
+        _uiCanvasToolbar.AutoSize = True
+        _uiCanvasToolbar.AutoSizeMode = AutoSizeMode.GrowAndShrink
+
+        _uiCanvasSizeLabel = New Label()
+        _uiCanvasSizeLabel.Text = "Canvas Size"
+        _uiCanvasSizeLabel.AutoSize = True
+        _uiCanvasSizeLabel.ForeColor = Color.Gainsboro
+        _uiCanvasSizeLabel.Margin = New Padding(0, 4, 8, 0)
+
+        _uiCanvasSizeComboBox = New ComboBox()
+        _uiCanvasSizeComboBox.DropDownStyle = ComboBoxStyle.DropDownList
+        _uiCanvasSizeComboBox.Items.AddRange(New Object() {"1280x720", "1920x1080"})
+        _uiCanvasSizeComboBox.SelectedIndex = 0
+        _uiCanvasSizeComboBox.Margin = New Padding(0, 0, 8, 0)
+
+        _uiCanvasToolbar.Controls.Add(_uiCanvasSizeLabel)
+        _uiCanvasToolbar.Controls.Add(_uiCanvasSizeComboBox)
+
+        _uiCanvasScrollPanel = New Panel()
+        _uiCanvasScrollPanel.Dock = DockStyle.Fill
+        _uiCanvasScrollPanel.AutoScroll = True
+        _uiCanvasScrollPanel.BackColor = Color.FromArgb(17, 24, 34)
+
+        _uiCanvasControl = New UiCanvasControl()
+        _uiCanvasControl.Location = New Point(0, 0)
+        _uiCanvasScrollPanel.Controls.Add(_uiCanvasControl)
+
+        _uiCanvasHost.Controls.Add(_uiCanvasScrollPanel)
+        _uiCanvasHost.Controls.Add(_uiCanvasToolbar)
+        toolSplitContainer.Panel2.Controls.Add(_uiCanvasHost)
+        _uiCanvasHost.BringToFront()
+
+        AddHandler _uiCanvasSizeComboBox.SelectedIndexChanged, AddressOf UiCanvasSizeComboBox_SelectedIndexChanged
+        AddHandler _uiCanvasControl.NodeSelected, AddressOf UiCanvasControl_NodeSelected
+    End Sub
+
     Private Function AddPropertyRow(caption As String, control As Control) As Label
         Dim label = New Label()
         label.Text = caption
@@ -154,10 +214,79 @@ Public Class Form1
         Return label
     End Function
 
-    Private Sub UiTreeView_AfterSelect(sender As Object, e As TreeViewEventArgs)
-        Dim selected = TryCast(e.Node.Tag, UiNode)
-        _uiSelectedNode = selected
+    Private Sub UiCanvasSizeComboBox_SelectedIndexChanged(sender As Object, e As EventArgs)
+        If _uiCanvasControl Is Nothing Then
+            Return
+        End If
+
+        Dim selectedValue = TryCast(_uiCanvasSizeComboBox.SelectedItem, String)
+        If String.IsNullOrWhiteSpace(selectedValue) Then
+            Return
+        End If
+
+        Dim parts = selectedValue.Split("x"c)
+        If parts.Length <> 2 Then
+            Return
+        End If
+
+        Dim width As Integer
+        Dim height As Integer
+        If Integer.TryParse(parts(0), width) AndAlso Integer.TryParse(parts(1), height) Then
+            _uiCanvasControl.CanvasSize = New Size(width, height)
+        End If
+    End Sub
+
+    Private Sub UiCanvasControl_NodeSelected(sender As Object, e As UiCanvasControl.UiNodeSelectedEventArgs)
+        SetSelectedUiNode(e.Node, True)
+    End Sub
+
+    Private Sub SetSelectedUiNode(node As UiNode, syncTree As Boolean)
+        _uiSelectionSync = True
+        _uiSelectedNode = node
+
+        If syncTree AndAlso _uiTreeView IsNot Nothing Then
+            Dim treeNode = FindTreeNode(_uiTreeView.Nodes, node)
+            If treeNode IsNot Nothing Then
+                _uiTreeView.SelectedNode = treeNode
+            Else
+                _uiTreeView.SelectedNode = Nothing
+            End If
+        End If
+
+        If _uiCanvasControl IsNot Nothing Then
+            _uiCanvasControl.SelectedNode = node
+        End If
+
+        _uiSelectionSync = False
         LoadUiNodeProperties()
+    End Sub
+
+    Private Function FindTreeNode(nodes As TreeNodeCollection, target As UiNode) As TreeNode
+        If nodes Is Nothing Then
+            Return Nothing
+        End If
+
+        For Each node As TreeNode In nodes
+            If node.Tag Is target Then
+                Return node
+            End If
+
+            Dim childMatch = FindTreeNode(node.Nodes, target)
+            If childMatch IsNot Nothing Then
+                Return childMatch
+            End If
+        Next
+
+        Return Nothing
+    End Function
+
+    Private Sub UiTreeView_AfterSelect(sender As Object, e As TreeViewEventArgs)
+        If _uiSelectionSync Then
+            Return
+        End If
+
+        Dim selected = TryCast(e.Node.Tag, UiNode)
+        SetSelectedUiNode(selected, False)
     End Sub
 
     Private Sub SyncUiNodeDocumentFromJson(jsonText As String)
@@ -176,6 +305,9 @@ Public Class Form1
             Dim rootName = GetUiDocumentDisplayName()
             _uiRootNode = BuildUiNodeTree(rootName, document, Nothing)
             BindUiTreeView()
+            If _uiCanvasControl IsNot Nothing Then
+                _uiCanvasControl.RootNode = _uiRootNode
+            End If
         Catch ex As JsonReaderException
         End Try
     End Sub
@@ -240,12 +372,18 @@ Public Class Form1
         If _uiTreeView IsNot Nothing Then
             _uiTreeView.Nodes.Clear()
         End If
+        If _uiCanvasControl IsNot Nothing Then
+            _uiCanvasControl.RootNode = Nothing
+        End If
         ClearUiNodeProperties()
     End Sub
 
     Private Sub ClearUiNodeProperties()
         _uiPropertyLoading = True
         _uiSelectedNode = Nothing
+        If _uiCanvasControl IsNot Nothing Then
+            _uiCanvasControl.SelectedNode = Nothing
+        End If
         If _boundsTextBox IsNot Nothing Then
             _boundsTextBox.Text = String.Empty
         End If
@@ -406,6 +544,9 @@ Public Class Form1
         _uiSuppressSync = False
         _uiDocument.Save(openFile)
         StatusText("[UI]     Saved " & openFile)
+        If _uiCanvasControl IsNot Nothing Then
+            _uiCanvasControl.Invalidate()
+        End If
     End Sub
 
     Private Function ParsePaddingValue(value As String, label As String) As Padding
@@ -4946,6 +5087,7 @@ Public Class Form1
         Next
 
         InitializeUiNodeEditor()
+        InitializeUiCanvas()
     End Sub
 
     Private Sub fullJson_TextChanged(sender As Object, e As EventArgs) Handles fullJson.TextChanged
