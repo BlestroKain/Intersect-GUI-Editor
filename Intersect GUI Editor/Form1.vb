@@ -1,5 +1,8 @@
-﻿Imports System.IO
+﻿Imports System.Globalization
+Imports System.IO
+Imports IntersectGuiDesigner.Core
 Imports Newtonsoft.Json
+Imports Newtonsoft.Json.Linq
 
 Public Class Form1
     Private _rnd As New Random()
@@ -17,9 +20,533 @@ Public Class Form1
     Dim autoclosewindowschecked As Boolean = True
     Dim gridoverlay As Boolean = False
     Public guitype As String = "game"
+    Private _uiDocument As GuiJsonDocument
+    Private _uiRootNode As UiNode
+    Private _uiSelectedNode As UiNode
+    Private _uiTabPage As TabPage
+    Private _uiSplitContainer As SplitContainer
+    Private _uiTreeView As TreeView
+    Private _uiPropertyPanel As Panel
+    Private _uiPropertyTable As TableLayoutPanel
+    Private _uiPropertyLoading As Boolean
+    Private _uiSuppressSync As Boolean
+    Private _boundsLabel As Label
+    Private _boundsTextBox As TextBox
+    Private _dockLabel As Label
+    Private _dockComboBox As ComboBox
+    Private _paddingLabel As Label
+    Private _paddingTextBox As TextBox
+    Private _marginLabel As Label
+    Private _marginTextBox As TextBox
+    Private _hiddenLabel As Label
+    Private _hiddenCheckBox As CheckBox
+    Private _disabledLabel As Label
+    Private _disabledCheckBox As CheckBox
+    Private _fontNameLabel As Label
+    Private _fontNameTextBox As TextBox
+    Private _fontSizeLabel As Label
+    Private _fontSizeUpDown As NumericUpDown
+    Private _textAlignLabel As Label
+    Private _textAlignComboBox As ComboBox
+    Private _textColorLabel As Label
+    Private _textColorTextBox As TextBox
 
     Public Sub StatusText(ByVal text As String)
         statusTxtBox.Text = text
+    End Sub
+
+    Private Sub InitializeUiNodeEditor()
+        If TabControl1 Is Nothing Then
+            Return
+        End If
+
+        _uiTabPage = New TabPage()
+        _uiTabPage.Text = "Properties"
+        _uiTabPage.BackColor = Color.FromArgb(27, 36, 49)
+
+        _uiSplitContainer = New SplitContainer()
+        _uiSplitContainer.Dock = DockStyle.Fill
+        _uiSplitContainer.SplitterDistance = 170
+
+        _uiTreeView = New TreeView()
+        _uiTreeView.Dock = DockStyle.Fill
+        _uiTreeView.HideSelection = False
+        AddHandler _uiTreeView.AfterSelect, AddressOf UiTreeView_AfterSelect
+
+        _uiSplitContainer.Panel1.Controls.Add(_uiTreeView)
+
+        _uiPropertyPanel = New Panel()
+        _uiPropertyPanel.Dock = DockStyle.Fill
+        _uiPropertyPanel.AutoScroll = True
+
+        _uiPropertyTable = New TableLayoutPanel()
+        _uiPropertyTable.ColumnCount = 2
+        _uiPropertyTable.Dock = DockStyle.Top
+        _uiPropertyTable.AutoSize = True
+        _uiPropertyTable.AutoSizeMode = AutoSizeMode.GrowAndShrink
+        _uiPropertyTable.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 40))
+        _uiPropertyTable.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 60))
+
+        _boundsTextBox = New TextBox()
+        _dockComboBox = New ComboBox()
+        _dockComboBox.DropDownStyle = ComboBoxStyle.DropDownList
+        _dockComboBox.Items.AddRange([Enum].GetNames(GetType(DockStyle)))
+        _paddingTextBox = New TextBox()
+        _marginTextBox = New TextBox()
+        _hiddenCheckBox = New CheckBox()
+        _disabledCheckBox = New CheckBox()
+        _fontNameTextBox = New TextBox()
+        _fontSizeUpDown = New NumericUpDown()
+        _fontSizeUpDown.DecimalPlaces = 1
+        _fontSizeUpDown.Minimum = 1
+        _fontSizeUpDown.Maximum = 128
+        _fontSizeUpDown.Increment = 0.5D
+        _textAlignComboBox = New ComboBox()
+        _textAlignComboBox.DropDownStyle = ComboBoxStyle.DropDown
+        _textAlignComboBox.Items.AddRange(New Object() {"Left", "Center", "Right", "Top", "Bottom"})
+        _textColorTextBox = New TextBox()
+
+        _boundsLabel = AddPropertyRow("Bounds", _boundsTextBox)
+        _dockLabel = AddPropertyRow("Dock", _dockComboBox)
+        _paddingLabel = AddPropertyRow("Padding", _paddingTextBox)
+        _marginLabel = AddPropertyRow("Margin", _marginTextBox)
+        _hiddenLabel = AddPropertyRow("Hidden", _hiddenCheckBox)
+        _disabledLabel = AddPropertyRow("Disabled", _disabledCheckBox)
+        _fontNameLabel = AddPropertyRow("Font Name", _fontNameTextBox)
+        _fontSizeLabel = AddPropertyRow("Font Size", _fontSizeUpDown)
+        _textAlignLabel = AddPropertyRow("Text Align", _textAlignComboBox)
+        _textColorLabel = AddPropertyRow("Text Color", _textColorTextBox)
+
+        _uiPropertyPanel.Controls.Add(_uiPropertyTable)
+        _uiSplitContainer.Panel2.Controls.Add(_uiPropertyPanel)
+        _uiTabPage.Controls.Add(_uiSplitContainer)
+        TabControl1.Controls.Add(_uiTabPage)
+
+        AddHandler _boundsTextBox.Leave, AddressOf BoundsTextBox_Leave
+        AddHandler _dockComboBox.SelectedIndexChanged, AddressOf DockComboBox_SelectedIndexChanged
+        AddHandler _paddingTextBox.Leave, AddressOf PaddingTextBox_Leave
+        AddHandler _marginTextBox.Leave, AddressOf MarginTextBox_Leave
+        AddHandler _hiddenCheckBox.CheckedChanged, AddressOf HiddenCheckBox_CheckedChanged
+        AddHandler _disabledCheckBox.CheckedChanged, AddressOf DisabledCheckBox_CheckedChanged
+        AddHandler _fontNameTextBox.Leave, AddressOf FontNameTextBox_Leave
+        AddHandler _fontSizeUpDown.ValueChanged, AddressOf FontSizeUpDown_ValueChanged
+        AddHandler _textAlignComboBox.SelectedIndexChanged, AddressOf TextAlignComboBox_Changed
+        AddHandler _textAlignComboBox.Leave, AddressOf TextAlignComboBox_Changed
+        AddHandler _textColorTextBox.Leave, AddressOf TextColorTextBox_Leave
+    End Sub
+
+    Private Function AddPropertyRow(caption As String, control As Control) As Label
+        Dim label = New Label()
+        label.Text = caption
+        label.TextAlign = ContentAlignment.MiddleLeft
+        label.Dock = DockStyle.Fill
+        label.Margin = New Padding(6, 6, 6, 6)
+
+        control.Dock = DockStyle.Fill
+        control.Margin = New Padding(6, 6, 6, 6)
+
+        Dim rowIndex = _uiPropertyTable.RowCount
+        _uiPropertyTable.RowCount += 1
+        _uiPropertyTable.RowStyles.Add(New RowStyle(SizeType.AutoSize))
+        _uiPropertyTable.Controls.Add(label, 0, rowIndex)
+        _uiPropertyTable.Controls.Add(control, 1, rowIndex)
+
+        Return label
+    End Function
+
+    Private Sub UiTreeView_AfterSelect(sender As Object, e As TreeViewEventArgs)
+        Dim selected = TryCast(e.Node.Tag, UiNode)
+        _uiSelectedNode = selected
+        LoadUiNodeProperties()
+    End Sub
+
+    Private Sub SyncUiNodeDocumentFromJson(jsonText As String)
+        If _uiSuppressSync Then
+            Return
+        End If
+
+        If String.IsNullOrWhiteSpace(jsonText) Then
+            ClearUiNodeTree()
+            Return
+        End If
+
+        Try
+            Dim document = JObject.Parse(jsonText)
+            _uiDocument = New GuiJsonDocument(document)
+            Dim rootName = GetUiDocumentDisplayName()
+            _uiRootNode = BuildUiNodeTree(rootName, document, Nothing)
+            BindUiTreeView()
+        Catch ex As JsonReaderException
+        End Try
+    End Sub
+
+    Private Function GetUiDocumentDisplayName() As String
+        If Not String.IsNullOrWhiteSpace(openFile) Then
+            Return Path.GetFileNameWithoutExtension(openFile)
+        End If
+
+        Return "Document"
+    End Function
+
+    Private Function BuildUiNodeTree(name As String, raw As JObject, parent As UiNode) As UiNode
+        Dim node = New UiNode(name, raw, parent)
+        Dim childrenToken = raw("Children")
+        Dim childrenObject = TryCast(childrenToken, JObject)
+        If childrenObject Is Nothing Then
+            Return node
+        End If
+
+        For Each propertyNode As JProperty In childrenObject.Properties()
+            Dim childObject = TryCast(propertyNode.Value, JObject)
+            If childObject Is Nothing Then
+                Continue For
+            End If
+
+            Dim childNode = BuildUiNodeTree(propertyNode.Name, childObject, node)
+            node.Children.Add(childNode)
+        Next
+
+        Return node
+    End Function
+
+    Private Sub BindUiTreeView()
+        If _uiTreeView Is Nothing Then
+            Return
+        End If
+
+        _uiTreeView.BeginUpdate()
+        _uiTreeView.Nodes.Clear()
+
+        If _uiRootNode IsNot Nothing Then
+            Dim rootTreeNode = CreateUiTreeNode(_uiRootNode)
+            _uiTreeView.Nodes.Add(rootTreeNode)
+            rootTreeNode.Expand()
+        End If
+
+        _uiTreeView.EndUpdate()
+        ClearUiNodeProperties()
+    End Sub
+
+    Private Function CreateUiTreeNode(node As UiNode) As TreeNode
+        Dim treeNode = New TreeNode(node.Name)
+        treeNode.Tag = node
+        For Each child In node.Children
+            treeNode.Nodes.Add(CreateUiTreeNode(child))
+        Next
+        Return treeNode
+    End Function
+
+    Private Sub ClearUiNodeTree()
+        If _uiTreeView IsNot Nothing Then
+            _uiTreeView.Nodes.Clear()
+        End If
+        ClearUiNodeProperties()
+    End Sub
+
+    Private Sub ClearUiNodeProperties()
+        _uiPropertyLoading = True
+        _uiSelectedNode = Nothing
+        If _boundsTextBox IsNot Nothing Then
+            _boundsTextBox.Text = String.Empty
+        End If
+        If _dockComboBox IsNot Nothing Then
+            _dockComboBox.SelectedIndex = -1
+            _dockComboBox.Text = String.Empty
+        End If
+        If _paddingTextBox IsNot Nothing Then
+            _paddingTextBox.Text = String.Empty
+        End If
+        If _marginTextBox IsNot Nothing Then
+            _marginTextBox.Text = String.Empty
+        End If
+        If _hiddenCheckBox IsNot Nothing Then
+            _hiddenCheckBox.Checked = False
+        End If
+        If _disabledCheckBox IsNot Nothing Then
+            _disabledCheckBox.Checked = False
+        End If
+        If _fontNameTextBox IsNot Nothing Then
+            _fontNameTextBox.Text = String.Empty
+        End If
+        If _fontSizeUpDown IsNot Nothing Then
+            _fontSizeUpDown.Value = _fontSizeUpDown.Minimum
+        End If
+        If _textAlignComboBox IsNot Nothing Then
+            _textAlignComboBox.SelectedIndex = -1
+            _textAlignComboBox.Text = String.Empty
+        End If
+        If _textColorTextBox IsNot Nothing Then
+            _textColorTextBox.Text = String.Empty
+        End If
+        _uiPropertyLoading = False
+        SetPropertyVisibility(False, False, False, False, False, False, False, False, False, False)
+    End Sub
+
+    Private Sub LoadUiNodeProperties()
+        If _uiSelectedNode Is Nothing Then
+            ClearUiNodeProperties()
+            Return
+        End If
+
+        _uiPropertyLoading = True
+
+        Dim hasBounds = HasUiProperty(_uiSelectedNode, "Bounds")
+        If hasBounds Then
+            _boundsTextBox.Text = GetRawString(_uiSelectedNode, "Bounds")
+        End If
+
+        Dim hasDock = HasUiProperty(_uiSelectedNode, "Dock")
+        If hasDock Then
+            Dim dockValue = _uiSelectedNode.GetDock()
+            If dockValue.HasValue Then
+                _dockComboBox.SelectedItem = dockValue.Value.ToString()
+            Else
+                _dockComboBox.SelectedIndex = -1
+            End If
+        End If
+
+        Dim hasPadding = HasUiProperty(_uiSelectedNode, "Padding")
+        If hasPadding Then
+            _paddingTextBox.Text = GetRawString(_uiSelectedNode, "Padding")
+        End If
+
+        Dim hasMargin = HasUiProperty(_uiSelectedNode, "Margin")
+        If hasMargin Then
+            _marginTextBox.Text = GetRawString(_uiSelectedNode, "Margin")
+        End If
+
+        Dim hasHidden = HasUiProperty(_uiSelectedNode, "Hidden")
+        If hasHidden Then
+            _hiddenCheckBox.Checked = _uiSelectedNode.GetHidden().GetValueOrDefault(False)
+        End If
+
+        Dim hasDisabled = HasUiProperty(_uiSelectedNode, "Disabled")
+        If hasDisabled Then
+            _disabledCheckBox.Checked = _uiSelectedNode.GetDisabled().GetValueOrDefault(False)
+        End If
+
+        Dim hasFont = HasUiProperty(_uiSelectedNode, "Font")
+        If hasFont Then
+            _fontNameTextBox.Text = _uiSelectedNode.GetFontName()
+            Dim fontSize = _uiSelectedNode.GetFontSize()
+            If fontSize.HasValue Then
+                Dim sizeValue = Math.Min(_fontSizeUpDown.Maximum, Math.Max(_fontSizeUpDown.Minimum, CDec(fontSize.Value)))
+                _fontSizeUpDown.Value = sizeValue
+            End If
+        End If
+
+        Dim hasTextAlign = HasUiProperty(_uiSelectedNode, "TextAlign")
+        If hasTextAlign Then
+            _textAlignComboBox.Text = _uiSelectedNode.GetTextAlign()
+        End If
+
+        Dim hasTextColor = HasUiProperty(_uiSelectedNode, "TextColor")
+        If hasTextColor Then
+            _textColorTextBox.Text = _uiSelectedNode.GetTextColor()
+        End If
+
+        SetPropertyVisibility(hasBounds, hasDock, hasPadding, hasMargin, hasHidden, hasDisabled, hasFont, hasFont, hasTextAlign, hasTextColor)
+        _uiPropertyLoading = False
+    End Sub
+
+    Private Sub SetPropertyVisibility(hasBounds As Boolean,
+                                      hasDock As Boolean,
+                                      hasPadding As Boolean,
+                                      hasMargin As Boolean,
+                                      hasHidden As Boolean,
+                                      hasDisabled As Boolean,
+                                      hasFontName As Boolean,
+                                      hasFontSize As Boolean,
+                                      hasTextAlign As Boolean,
+                                      hasTextColor As Boolean)
+        SetPropertyVisible(_boundsLabel, _boundsTextBox, hasBounds)
+        SetPropertyVisible(_dockLabel, _dockComboBox, hasDock)
+        SetPropertyVisible(_paddingLabel, _paddingTextBox, hasPadding)
+        SetPropertyVisible(_marginLabel, _marginTextBox, hasMargin)
+        SetPropertyVisible(_hiddenLabel, _hiddenCheckBox, hasHidden)
+        SetPropertyVisible(_disabledLabel, _disabledCheckBox, hasDisabled)
+        SetPropertyVisible(_fontNameLabel, _fontNameTextBox, hasFontName)
+        SetPropertyVisible(_fontSizeLabel, _fontSizeUpDown, hasFontSize)
+        SetPropertyVisible(_textAlignLabel, _textAlignComboBox, hasTextAlign)
+        SetPropertyVisible(_textColorLabel, _textColorTextBox, hasTextColor)
+    End Sub
+
+    Private Sub SetPropertyVisible(label As Label, control As Control, isVisible As Boolean)
+        If label IsNot Nothing Then
+            label.Visible = isVisible
+        End If
+        If control IsNot Nothing Then
+            control.Visible = isVisible
+        End If
+    End Sub
+
+    Private Function HasUiProperty(node As UiNode, propertyName As String) As Boolean
+        Dim token = node.Raw(propertyName)
+        Return token IsNot Nothing AndAlso token.Type <> JTokenType.Null
+    End Function
+
+    Private Function GetRawString(node As UiNode, propertyName As String) As String
+        Dim token = node.Raw(propertyName)
+        If token Is Nothing OrElse token.Type = JTokenType.Null Then
+            Return String.Empty
+        End If
+
+        Return token.Value(Of String)()
+    End Function
+
+    Private Sub PersistUiNodeChanges()
+        If _uiDocument Is Nothing OrElse String.IsNullOrWhiteSpace(openFile) Then
+            Return
+        End If
+
+        Dim json = _uiDocument.Document.ToString(Formatting.Indented)
+        _uiSuppressSync = True
+        fullJson.Text = json
+        JTokenTreeUserControl1.SetJsonSource(json)
+        _uiSuppressSync = False
+        _uiDocument.Save(openFile)
+        StatusText("[UI]     Saved " & openFile)
+    End Sub
+
+    Private Function ParsePaddingValue(value As String, label As String) As Padding
+        If String.IsNullOrWhiteSpace(value) Then
+            Throw New FormatException(String.Format("Invalid {0} value: input cannot be empty.", label))
+        End If
+
+        Dim parts = value.Split(","c)
+        If parts.Length <> 4 Then
+            Throw New FormatException(String.Format("Invalid {0} value: expected 4 parts but got {1}.", label, parts.Length))
+        End If
+
+        Dim parsed(3) As Integer
+        For index = 0 To parts.Length - 1
+            Dim part = parts(index).Trim()
+            Dim parsedValue As Integer
+            If Not Integer.TryParse(part, parsedValue) Then
+                Throw New FormatException(String.Format("Invalid {0} value: '{1}' is not an integer.", label, part))
+            End If
+            parsed(index) = parsedValue
+        Next
+
+        Return New Padding(parsed(0), parsed(1), parsed(2), parsed(3))
+    End Function
+
+    Private Sub BoundsTextBox_Leave(sender As Object, e As EventArgs)
+        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+            Return
+        End If
+
+        Try
+            Dim bounds = GuiValueParser.ParseBounds(_boundsTextBox.Text)
+            _uiSelectedNode.SetBounds(bounds)
+            PersistUiNodeChanges()
+        Catch ex As FormatException
+            StatusText("[UI]     " & ex.Message)
+            LoadUiNodeProperties()
+        End Try
+    End Sub
+
+    Private Sub DockComboBox_SelectedIndexChanged(sender As Object, e As EventArgs)
+        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+            Return
+        End If
+
+        Dim selectedValue = TryCast(_dockComboBox.SelectedItem, String)
+        If String.IsNullOrWhiteSpace(selectedValue) Then
+            Return
+        End If
+
+        Dim parsed As DockStyle
+        If [Enum].TryParse(selectedValue, True, parsed) Then
+            _uiSelectedNode.SetDock(parsed)
+            PersistUiNodeChanges()
+        End If
+    End Sub
+
+    Private Sub PaddingTextBox_Leave(sender As Object, e As EventArgs)
+        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+            Return
+        End If
+
+        Try
+            Dim padding = ParsePaddingValue(_paddingTextBox.Text, "Padding")
+            _uiSelectedNode.SetPadding(padding)
+            PersistUiNodeChanges()
+        Catch ex As FormatException
+            StatusText("[UI]     " & ex.Message)
+            LoadUiNodeProperties()
+        End Try
+    End Sub
+
+    Private Sub MarginTextBox_Leave(sender As Object, e As EventArgs)
+        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+            Return
+        End If
+
+        Try
+            Dim margin = ParsePaddingValue(_marginTextBox.Text, "Margin")
+            _uiSelectedNode.SetMargin(margin)
+            PersistUiNodeChanges()
+        Catch ex As FormatException
+            StatusText("[UI]     " & ex.Message)
+            LoadUiNodeProperties()
+        End Try
+    End Sub
+
+    Private Sub HiddenCheckBox_CheckedChanged(sender As Object, e As EventArgs)
+        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+            Return
+        End If
+
+        _uiSelectedNode.SetHidden(_hiddenCheckBox.Checked)
+        PersistUiNodeChanges()
+    End Sub
+
+    Private Sub DisabledCheckBox_CheckedChanged(sender As Object, e As EventArgs)
+        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+            Return
+        End If
+
+        _uiSelectedNode.SetDisabled(_disabledCheckBox.Checked)
+        PersistUiNodeChanges()
+    End Sub
+
+    Private Sub FontNameTextBox_Leave(sender As Object, e As EventArgs)
+        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+            Return
+        End If
+
+        Dim fontSize = CDbl(_fontSizeUpDown.Value)
+        _uiSelectedNode.SetFont(_fontNameTextBox.Text, fontSize)
+        PersistUiNodeChanges()
+    End Sub
+
+    Private Sub FontSizeUpDown_ValueChanged(sender As Object, e As EventArgs)
+        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+            Return
+        End If
+
+        Dim fontSize = CDbl(_fontSizeUpDown.Value)
+        _uiSelectedNode.SetFont(_fontNameTextBox.Text, fontSize)
+        PersistUiNodeChanges()
+    End Sub
+
+    Private Sub TextAlignComboBox_Changed(sender As Object, e As EventArgs)
+        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+            Return
+        End If
+
+        _uiSelectedNode.SetTextAlign(_textAlignComboBox.Text)
+        PersistUiNodeChanges()
+    End Sub
+
+    Private Sub TextColorTextBox_Leave(sender As Object, e As EventArgs)
+        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+            Return
+        End If
+
+        _uiSelectedNode.SetTextColor(_textColorTextBox.Text)
+        PersistUiNodeChanges()
     End Sub
 
     Private Sub LoginWindowToolStripMenuItem_Click(sender As Object, e As EventArgs) Handles LoginWindowToolStripMenuItem.Click
@@ -4417,6 +4944,12 @@ Public Class Form1
                 objCtrl.Font = sysfont
             End If
         Next
+
+        InitializeUiNodeEditor()
+    End Sub
+
+    Private Sub fullJson_TextChanged(sender As Object, e As EventArgs) Handles fullJson.TextChanged
+        SyncUiNodeDocumentFromJson(fullJson.Text)
     End Sub
 
     Private Sub AppSettings_Click(sender As Object, e As EventArgs) Handles AppSettings.Click

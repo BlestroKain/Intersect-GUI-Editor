@@ -1,5 +1,6 @@
 Imports System.Drawing
 Imports System.Windows.Forms
+Imports System.Globalization
 Imports Newtonsoft.Json.Linq
 
 Namespace IntersectGuiDesigner.Core
@@ -87,6 +88,84 @@ Namespace IntersectGuiDesigner.Core
             SetStringProperty("Margin", SerializePadding(margin))
         End Sub
 
+        Public Function GetHidden() As Boolean?
+            Return GetBooleanProperty("Hidden")
+        End Function
+
+        Public Sub SetHidden(isHidden As Boolean)
+            SetBooleanProperty("Hidden", isHidden)
+        End Sub
+
+        Public Function GetDisabled() As Boolean?
+            Return GetBooleanProperty("Disabled")
+        End Function
+
+        Public Sub SetDisabled(isDisabled As Boolean)
+            SetBooleanProperty("Disabled", isDisabled)
+        End Sub
+
+        Public Function GetTextAlign() As String
+            Return GetStringProperty("TextAlign")
+        End Function
+
+        Public Sub SetTextAlign(value As String)
+            SetStringProperty("TextAlign", value)
+        End Sub
+
+        Public Function GetTextColor() As String
+            Return GetStringProperty("TextColor")
+        End Function
+
+        Public Sub SetTextColor(value As String)
+            SetStringProperty("TextColor", value)
+        End Sub
+
+        Public Function GetFontName() As String
+            Dim value = GetStringProperty("Font")
+            If String.IsNullOrWhiteSpace(value) Then
+                Return Nothing
+            End If
+
+            Dim parts = value.Split(","c)
+            Return parts(0).Trim()
+        End Function
+
+        Public Function GetFontSize() As Double?
+            Dim value = GetStringProperty("Font")
+            If String.IsNullOrWhiteSpace(value) Then
+                Return Nothing
+            End If
+
+            Dim parts = value.Split(","c)
+            If parts.Length < 2 Then
+                Return Nothing
+            End If
+
+            Dim parsedSize As Double
+            If Double.TryParse(parts(1).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, parsedSize) Then
+                Return parsedSize
+            End If
+
+            Return Nothing
+        End Function
+
+        Public Sub SetFont(fontName As String, fontSize As Double?)
+            Dim nameValue = If(fontName, String.Empty).Trim()
+            Dim sizeValue As String = Nothing
+
+            If fontSize.HasValue Then
+                sizeValue = fontSize.Value.ToString(CultureInfo.InvariantCulture)
+            End If
+
+            If String.IsNullOrWhiteSpace(nameValue) AndAlso String.IsNullOrWhiteSpace(sizeValue) Then
+                Raw("Font") = Nothing
+            ElseIf String.IsNullOrWhiteSpace(sizeValue) Then
+                Raw("Font") = nameValue
+            Else
+                Raw("Font") = String.Format(CultureInfo.InvariantCulture, "{0},{1}", nameValue, sizeValue)
+            End If
+        End Sub
+
         Public Function GetTextPadding() As Padding?
             Return ParsePaddingProperty("TextPadding")
         End Function
@@ -109,6 +188,36 @@ Namespace IntersectGuiDesigner.Core
         End Function
 
         Private Sub SetStringProperty(propertyName As String, value As String)
+            If Raw Is Nothing Then
+                Throw New InvalidOperationException("Raw cannot be null when setting properties.")
+            End If
+
+            Raw(propertyName) = value
+        End Sub
+
+        Private Function GetBooleanProperty(propertyName As String) As Boolean?
+            If Raw Is Nothing Then
+                Throw New InvalidOperationException("Raw cannot be null when accessing properties.")
+            End If
+
+            Dim token = Raw(propertyName)
+            If token Is Nothing OrElse token.Type = JTokenType.Null Then
+                Return Nothing
+            End If
+
+            If token.Type = JTokenType.Boolean Then
+                Return token.Value(Of Boolean)()
+            End If
+
+            Dim parsed As Boolean
+            If Boolean.TryParse(token.ToString(), parsed) Then
+                Return parsed
+            End If
+
+            Return Nothing
+        End Function
+
+        Private Sub SetBooleanProperty(propertyName As String, value As Boolean)
             If Raw Is Nothing Then
                 Throw New InvalidOperationException("Raw cannot be null when setting properties.")
             End If
