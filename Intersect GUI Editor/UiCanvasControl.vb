@@ -86,7 +86,9 @@ Public Class UiCanvasControl
             Return
         End If
 
-        DrawNode(e.Graphics, _rootNode, New Point(0, 0))
+        Dim layout = New Dictionary(Of UiNode, Rectangle)()
+        ComputeLayout(_rootNode, New Rectangle(0, 0, _canvasSize.Width, _canvasSize.Height), layout)
+        DrawNode(e.Graphics, _rootNode, layout)
     End Sub
 
     Protected Overrides Sub OnMouseDown(e As MouseEventArgs)
@@ -118,25 +120,91 @@ Public Class UiCanvasControl
         End Using
     End Sub
 
-    Private Sub DrawNode(graphics As Graphics, node As UiNode, offset As Point)
+    Private Sub DrawNode(graphics As Graphics, node As UiNode, layout As Dictionary(Of UiNode, Rectangle))
         If node Is Nothing Then
             Return
         End If
 
-        Dim bounds = node.GetBounds()
-        Dim nextOffset = offset
-
-        If bounds.HasValue Then
-            Dim absoluteBounds = New Rectangle(offset.X + bounds.Value.X, offset.Y + bounds.Value.Y, bounds.Value.Width, bounds.Value.Height)
-            DrawNodeBounds(graphics, node, absoluteBounds)
-            _renderedNodes.Add(New RenderedNode(node, absoluteBounds))
-            nextOffset = absoluteBounds.Location
+        Dim absoluteBounds As Rectangle
+        If Not layout.TryGetValue(node, absoluteBounds) Then
+            Return
         End If
 
+        DrawNodeBounds(graphics, node, absoluteBounds)
+        _renderedNodes.Add(New RenderedNode(node, absoluteBounds))
+
         For Each child In node.Children
-            DrawNode(graphics, child, nextOffset)
+            DrawNode(graphics, child, layout)
         Next
     End Sub
+
+    Private Sub ComputeLayout(node As UiNode, parentRect As Rectangle, layout As Dictionary(Of UiNode, Rectangle))
+        If node Is Nothing Then
+            Return
+        End If
+
+        Dim nodeBounds = node.GetBounds()
+        Dim nodeRect As Rectangle
+
+        If nodeBounds.HasValue Then
+            nodeRect = New Rectangle(parentRect.X + nodeBounds.Value.X, parentRect.Y + nodeBounds.Value.Y, nodeBounds.Value.Width, nodeBounds.Value.Height)
+        Else
+            nodeRect = parentRect
+        End If
+
+        layout(node) = nodeRect
+
+        Dim contentRect = ApplyPadding(nodeRect, node.GetPadding())
+        Dim remainingRect = contentRect
+
+        For Each child In node.Children
+            Dim dockStyle = child.GetDock().GetValueOrDefault(DockStyle.None)
+            Dim childBounds = child.GetBounds()
+            Dim childRect As Rectangle
+
+            Select Case dockStyle
+                Case DockStyle.Top
+                    Dim height = If(childBounds.HasValue, Math.Max(0, childBounds.Value.Height), 0)
+                    childRect = New Rectangle(remainingRect.X, remainingRect.Y, Math.Max(0, remainingRect.Width), height)
+                    remainingRect.Y += height
+                    remainingRect.Height = Math.Max(0, remainingRect.Height - height)
+                Case DockStyle.Bottom
+                    Dim height = If(childBounds.HasValue, Math.Max(0, childBounds.Value.Height), 0)
+                    childRect = New Rectangle(remainingRect.X, remainingRect.Bottom - height, Math.Max(0, remainingRect.Width), height)
+                    remainingRect.Height = Math.Max(0, remainingRect.Height - height)
+                Case DockStyle.Left
+                    Dim width = If(childBounds.HasValue, Math.Max(0, childBounds.Value.Width), 0)
+                    childRect = New Rectangle(remainingRect.X, remainingRect.Y, width, Math.Max(0, remainingRect.Height))
+                    remainingRect.X += width
+                    remainingRect.Width = Math.Max(0, remainingRect.Width - width)
+                Case DockStyle.Right
+                    Dim width = If(childBounds.HasValue, Math.Max(0, childBounds.Value.Width), 0)
+                    childRect = New Rectangle(remainingRect.Right - width, remainingRect.Y, width, Math.Max(0, remainingRect.Height))
+                    remainingRect.Width = Math.Max(0, remainingRect.Width - width)
+                Case DockStyle.Fill
+                    childRect = remainingRect
+                Case Else
+                    If childBounds.HasValue Then
+                        childRect = New Rectangle(contentRect.X + childBounds.Value.X, contentRect.Y + childBounds.Value.Y, childBounds.Value.Width, childBounds.Value.Height)
+                    Else
+                        childRect = New Rectangle(contentRect.Location, Size.Empty)
+                    End If
+            End Select
+
+            ComputeLayout(child, childRect, layout)
+        Next
+    End Sub
+
+    Private Shared Function ApplyPadding(bounds As Rectangle, padding As Padding?) As Rectangle
+        If Not padding.HasValue Then
+            Return bounds
+        End If
+
+        Dim value = padding.Value
+        Dim width = Math.Max(0, bounds.Width - value.Left - value.Right)
+        Dim height = Math.Max(0, bounds.Height - value.Top - value.Bottom)
+        Return New Rectangle(bounds.X + value.Left, bounds.Y + value.Top, width, height)
+    End Function
 
     Private Sub DrawNodeBounds(graphics As Graphics, node As UiNode, bounds As Rectangle)
         Dim isSelected = node Is _selectedNode
