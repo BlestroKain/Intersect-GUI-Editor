@@ -1,7 +1,12 @@
 <Window x:Class="IntersectGuiDesigner.Wpf.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:IntersectGuiDesigner.Wpf"
         Title="Intersect GUI Designer (WPF)" Height="720" Width="1200">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <local:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVisibilityConverter" />
+    </Window.Resources>
     <DockPanel>
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">
@@ -15,7 +20,8 @@
                 <ColumnDefinition Width="320" />
             </Grid.ColumnDefinitions>
             <Border Grid.Column="0" BorderThickness="1" BorderBrush="Gray" Padding="8" Margin="8,8,4,8">
-                <TreeView ItemsSource="{Binding RootNodes}">
+                <TreeView ItemsSource="{Binding RootNodes}"
+                          local:TreeViewSelectionBehavior.SelectedItem="{Binding SelectedNode, Mode=TwoWay}">
                     <TreeView.ItemTemplate>
                         <HierarchicalDataTemplate ItemsSource="{Binding Children}">
                             <TextBlock Text="{Binding Name}" />
@@ -23,14 +29,74 @@
                     </TreeView.ItemTemplate>
                 </TreeView>
             </Border>
-            <Border Grid.Column="1" BorderThickness="1" BorderBrush="Gray" Padding="8" Margin="4,8,4,8">
-                <Canvas Background="#FFEFEFEF" />
+            <Border Grid.Column="1" BorderThickness="1" BorderBrush="Gray" Margin="4,8,4,8">
+                <ItemsControl ItemsSource="{Binding WireframeNodes}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <Canvas Background="#FFEFEFEF" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemContainerStyle>
+                        <Style TargetType="ContentPresenter">
+                            <Setter Property="Canvas.Left" Value="{Binding BoundsX}" />
+                            <Setter Property="Canvas.Top" Value="{Binding BoundsY}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasBounds}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ItemsControl.ItemContainerStyle>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Border BorderBrush="#FF2B6CB0" BorderThickness="1"
+                                        Background="#1F3182CE"
+                                        Width="{Binding BoundsWidth}" Height="{Binding BoundsHeight}" />
+                                <TextBlock Text="{Binding Name}" Foreground="#FF1A202C" Margin="4" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </Border>
             <Border Grid.Column="2" BorderThickness="1" BorderBrush="Gray" Padding="8" Margin="4,8,8,8">
-                <StackPanel>
-                    <TextBlock Text="Properties" FontWeight="Bold" Margin="0,0,0,8" />
-                    <TextBlock Text="Select a node to view details." />
-                </StackPanel>
+                <Grid>
+                    <TextBlock Text="Select a node to view details."
+                               Visibility="{Binding HasSelection, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <StackPanel>
+                            <TextBlock Text="Properties" FontWeight="Bold" Margin="0,0,0,8" />
+                            <TextBlock Text="{Binding SelectedNode.Name}" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,12" />
+
+                            <TextBlock Text="Layout" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <TextBlock Text="Bounds" />
+                            <TextBox Text="{Binding SelectedNode.BoundsText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding SelectedNode.HasBounds}" />
+                            <TextBlock Text="Dock" Margin="0,8,0,0" />
+                            <TextBox Text="{Binding SelectedNode.DockText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding SelectedNode.HasDock}" />
+                            <TextBlock Text="Padding" Margin="0,8,0,0" />
+                            <TextBox Text="{Binding SelectedNode.PaddingText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding SelectedNode.HasPadding}" />
+                            <TextBlock Text="Margin" Margin="0,8,0,0" />
+                            <TextBox Text="{Binding SelectedNode.MarginText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding SelectedNode.HasMargin}" />
+
+                            <TextBlock Text="State" FontWeight="SemiBold" Margin="0,16,0,4" />
+                            <CheckBox Content="Hidden" IsChecked="{Binding SelectedNode.Hidden}" IsEnabled="{Binding SelectedNode.HasHidden}" />
+                            <CheckBox Content="Disabled" IsChecked="{Binding SelectedNode.Disabled}" IsEnabled="{Binding SelectedNode.HasDisabled}" />
+
+                            <TextBlock Text="Font" FontWeight="SemiBold" Margin="0,16,0,4" />
+                            <TextBlock Text="Font Name" />
+                            <TextBox Text="{Binding SelectedNode.FontName, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding SelectedNode.HasFont}" />
+                            <TextBlock Text="Font Size" Margin="0,8,0,0" />
+                            <TextBox Text="{Binding SelectedNode.FontSize, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}" IsEnabled="{Binding SelectedNode.HasFont}" />
+
+                            <TextBlock Text="Text" FontWeight="SemiBold" Margin="0,16,0,4" />
+                            <TextBlock Text="Align" />
+                            <TextBox Text="{Binding SelectedNode.TextAlign, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding SelectedNode.HasTextAlign}" />
+                            <TextBlock Text="Color" Margin="0,8,0,0" />
+                            <TextBox Text="{Binding SelectedNode.TextColor, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding SelectedNode.HasTextColor}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
             </Border>
         </Grid>
     </DockPanel>
