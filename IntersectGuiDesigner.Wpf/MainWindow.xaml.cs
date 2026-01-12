@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.Drawing;
 using System.IO;
 using System.Windows;
@@ -12,9 +11,12 @@ namespace IntersectGuiDesigner.Wpf;
 
 public partial class MainWindow : Window
 {
-    public ObservableCollection<UiNodeViewModel> RootNodes { get; } = new();
     private UiNode? _rootNode;
     private readonly MainWindowViewModel _viewModel = new();
+    private const string RendererBackendEnvironmentVariable = "INTERSECT_RENDERER_BACKEND";
+    private const string RustRendererExecutableEnvironmentVariable = "INTERSECT_RUST_RENDERER_EXE";
+    private const string RustRendererDefaultRelativePath = "Renderers/IntersectGuiDesigner.RustRenderer.exe";
+    private const string LayoutSchemaVersion = "1.0";
 
     public MainWindow()
     {
@@ -40,8 +42,7 @@ public partial class MainWindow : Window
         var rootNode = UiNodeTreeBuilder.Build(rootName, rootObject);
 
         _rootNode = rootNode;
-        RootNodes.Clear();
-        RootNodes.Add(UiNodeViewModel.FromNode(rootNode));
+        _viewModel.LoadFromRoot(rootNode);
     }
 
     private void ExportLayoutJson_OnClick(object sender, RoutedEventArgs e)
@@ -77,11 +78,16 @@ public partial class MainWindow : Window
             return;
         }
 
+        var rendererBackend = ResolveRendererBackend();
         var dialog = new SaveFileDialog
         {
-            Filter = "PNG files (*.png)|*.png|All files (*.*)|*.*",
+            Filter = rendererBackend == RendererBackend.Rust
+                ? "SVG files (*.svg)|*.svg|All files (*.*)|*.*"
+                : "PNG files (*.png)|*.png|All files (*.*)|*.*",
             Title = "Render Wireframe",
-            FileName = $"{_rootNode.Name}.wireframe.png"
+            FileName = rendererBackend == RendererBackend.Rust
+                ? $"{_rootNode.Name}.wireframe.svg"
+                : $"{_rootNode.Name}.wireframe.png"
         };
 
         if (dialog.ShowDialog(this) != true)
@@ -89,32 +95,95 @@ public partial class MainWindow : Window
             return;
         }
 
-        var layoutDocument = BuildLayoutDocument(_rootNode);
-        var layoutPath = Path.ChangeExtension(dialog.FileName, ".json");
+        var layoutPath = WriteLayoutDocument(_rootNode, dialog.FileName);
+        if (rendererBackend == RendererBackend.Rust)
+        {
+            if (!RenderWithRust(layoutPath, dialog.FileName))
+            {
+                return;
+            }
+
+            if (string.Equals(Path.GetExtension(dialog.FileName), ".png", StringComparison.OrdinalIgnoreCase))
+            {
+                WireframeImage.Source = LoadImage(dialog.FileName);
+            }
+            else
+            {
+                WireframeImage.Source = null;
+            }
+
+            return;
+        }
+
+        if (!RenderWithPython(layoutPath, dialog.FileName))
+        {
+            return;
+        }
+
+        WireframeImage.Source = LoadImage(dialog.FileName);
+    }
+
+    private string WriteLayoutDocument(UiNode rootNode, string outputPath)
+    {
+        var layoutDocument = BuildLayoutDocument(rootNode);
+        var layoutPath = Path.ChangeExtension(outputPath, ".json");
         var json = JsonConvert.SerializeObject(layoutDocument, Formatting.Indented);
         File.WriteAllText(layoutPath, json);
+        return layoutPath;
+    }
 
+    private bool RenderWithPython(string layoutPath, string outputPath)
+    {
         var scriptPath = Path.Combine(AppContext.BaseDirectory, "Scripts", "render_wireframe.py");
         if (!File.Exists(scriptPath))
         {
             MessageBox.Show(this, $"Python renderer script was not found at {scriptPath}.", "Renderer missing", MessageBoxButton.OK, MessageBoxImage.Error);
-            return;
+            return false;
         }
 
         var pythonExecutable = Environment.GetEnvironmentVariable("PYTHON_EXE");
         var result = PythonScriptRunner.Run(
             scriptPath,
-            new[] { "--input", layoutPath, "--output", dialog.FileName },
+            new[] { "--input", layoutPath, "--output", outputPath },
             pythonExecutable: pythonExecutable);
 
         if (result.ExitCode != 0)
         {
             var message = string.IsNullOrWhiteSpace(result.StandardError) ? result.StandardOutput : result.StandardError;
             MessageBox.Show(this, message, "Render failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            return;
+            return false;
         }
 
-        WireframeImage.Source = LoadImage(dialog.FileName);
+        return true;
+    }
+
+    private bool RenderWithRust(string layoutPath, string outputPath)
+    {
+        var rustExecutable = Environment.GetEnvironmentVariable(RustRendererExecutableEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(rustExecutable))
+        {
+            rustExecutable = Path.Combine(AppContext.BaseDirectory, RustRendererDefaultRelativePath);
+        }
+
+        if (!File.Exists(rustExecutable))
+        {
+            MessageBox.Show(this, $"Rust renderer executable was not found at {rustExecutable}.", "Renderer missing", MessageBoxButton.OK, MessageBoxImage.Error);
+            return false;
+        }
+
+        var result = ExternalProcessRunner.Run(
+            rustExecutable,
+            new[] { "--input", layoutPath, "--output", outputPath },
+            workingDirectory: AppContext.BaseDirectory);
+
+        if (result.ExitCode != 0)
+        {
+            var message = string.IsNullOrWhiteSpace(result.StandardError) ? result.StandardOutput : result.StandardError;
+            MessageBox.Show(this, message, "Render failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            return false;
+        }
+
+        return true;
     }
 
     private static LayoutDocument BuildLayoutDocument(UiNode rootNode)
@@ -128,6 +197,8 @@ public partial class MainWindow : Window
         {
             var bounds = node.GetBounds();
             var size = node.GetSize();
+            var dock = node.GetDock();
+            var padding = node.GetPadding();
             var width = bounds?.Width ?? size?.Width ?? 160;
             var height = bounds?.Height ?? size?.Height ?? 48;
             var x = bounds?.X ?? 20 + (depth * 30);
@@ -153,13 +224,21 @@ public partial class MainWindow : Window
                 boundsRect = ToLayoutRect(bounds.Value);
             }
 
+            LayoutThickness? paddingThickness = null;
+            if (padding.HasValue)
+            {
+                paddingThickness = ToLayoutThickness(padding.Value);
+            }
+
             nodes.Add(new LayoutNode
             {
                 Id = nodeId,
                 Name = node.Name,
                 ParentId = parentId,
                 Bounds = boundsRect,
-                Computed = computed
+                Computed = computed,
+                Dock = dock?.ToString(),
+                Padding = paddingThickness
             });
 
             canvasWidth = Math.Max(canvasWidth, x + width + 20);
@@ -175,6 +254,7 @@ public partial class MainWindow : Window
 
         return new LayoutDocument
         {
+            SchemaVersion = LayoutSchemaVersion,
             Canvas = new LayoutCanvas
             {
                 Width = Math.Max(canvasWidth, 800),
@@ -195,6 +275,17 @@ public partial class MainWindow : Window
         };
     }
 
+    private static LayoutThickness ToLayoutThickness(System.Windows.Forms.Padding padding)
+    {
+        return new LayoutThickness
+        {
+            Left = padding.Left,
+            Top = padding.Top,
+            Right = padding.Right,
+            Bottom = padding.Bottom
+        };
+    }
+
     private static BitmapImage LoadImage(string path)
     {
         var image = new BitmapImage();
@@ -206,27 +297,22 @@ public partial class MainWindow : Window
         return image;
     }
 
-    public sealed class UiNodeViewModel
+    private RendererBackend ResolveRendererBackend()
     {
-        public string Name { get; }
-        public ObservableCollection<UiNodeViewModel> Children { get; }
-
-        private UiNodeViewModel(string name, ObservableCollection<UiNodeViewModel> children)
+        var value = Environment.GetEnvironmentVariable(RendererBackendEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(value))
         {
-            Name = name;
-            Children = children;
+            return RendererBackend.Python;
         }
 
-        public static UiNodeViewModel FromNode(UiNode node)
-        {
-            var children = new ObservableCollection<UiNodeViewModel>();
-            foreach (var child in node.Children)
-            {
-                children.Add(FromNode(child));
-            }
+        return value.Trim().Equals("rust", StringComparison.OrdinalIgnoreCase)
+            ? RendererBackend.Rust
+            : RendererBackend.Python;
+    }
 
-            return new UiNodeViewModel(node.Name, children);
-        }
-        _viewModel.LoadFromRoot(rootNode);
+    private enum RendererBackend
+    {
+        Python,
+        Rust
     }
 }
