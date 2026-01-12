@@ -6,6 +6,9 @@
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">
                 <MenuItem Header="_Open JSON..." Click="OpenJson_OnClick" />
+                <Separator />
+                <MenuItem Header="_Export Layout JSON..." Click="ExportLayoutJson_OnClick" />
+                <MenuItem Header="_Render Wireframe..." Click="RenderWireframe_OnClick" />
             </MenuItem>
         </Menu>
         <Grid>
@@ -30,6 +33,12 @@
                 <StackPanel>
                     <TextBlock Text="Properties" FontWeight="Bold" Margin="0,0,0,8" />
                     <TextBlock Text="Select a node to view details." />
+                    <TextBlock Text="Wireframe Preview" FontWeight="Bold" Margin="0,16,0,8" />
+                    <Border BorderThickness="1" BorderBrush="LightGray" Padding="4">
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                            <Image x:Name="WireframeImage" Stretch="None" />
+                        </ScrollViewer>
+                    </Border>
                 </StackPanel>
             </Border>
         </Grid>
