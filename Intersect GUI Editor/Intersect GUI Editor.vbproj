@@ -77,6 +77,10 @@
       <Project>{DD42A17A-67D1-41DD-9CFA-335B1E5C53B1}</Project>
       <Name>IntersectGuiDesigner.Core</Name>
     </ProjectReference>
+    <ProjectReference Include="..\IntersectGuiDesigner.DesignerViewModels\IntersectGuiDesigner.DesignerViewModels.csproj">
+      <Project>{1376784B-C887-4AA2-A751-B34A1E697F12}</Project>
+      <Name>IntersectGuiDesigner.DesignerViewModels</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <Import Include="Microsoft.VisualBasic" />

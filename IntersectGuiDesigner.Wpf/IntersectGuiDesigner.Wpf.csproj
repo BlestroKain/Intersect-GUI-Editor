@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net472</TargetFramework>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -9,5 +9,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\IntersectGuiDesigner.Core\IntersectGuiDesigner.Core.vbproj" />
+    <ProjectReference Include="..\IntersectGuiDesigner.DesignerViewModels\IntersectGuiDesigner.DesignerViewModels.csproj" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,7 @@
 ﻿Imports System.Globalization
 Imports System.IO
 Imports IntersectGuiDesigner.Core
+Imports IntersectGuiDesigner.DesignerViewModels
 Imports Newtonsoft.Json
 Imports Newtonsoft.Json.Linq
 
@@ -22,7 +23,8 @@ Public Class Form1
     Public guitype As String = "game"
     Private _uiDocument As GuiJsonDocument
     Private _uiRootNode As UiNode
-    Private _uiSelectedNode As UiNode
+    Private _uiTreeViewModel As UiTreeViewModel
+    Private _uiSelectionState As SelectionStateViewModel
     Private _uiTabPage As TabPage
     Private _uiSplitContainer As SplitContainer
     Private _uiTreeView As TreeView
@@ -30,7 +32,6 @@ Public Class Form1
     Private _uiPropertyTable As TableLayoutPanel
     Private _uiPropertyLoading As Boolean
     Private _uiSuppressSync As Boolean
-    Private _uiSelectionSync As Boolean
     Private _uiCanvasHost As Panel
     Private _uiCanvasToolbar As FlowLayoutPanel
     Private _uiCanvasSizeLabel As Label
@@ -65,6 +66,14 @@ Public Class Form1
     Private Sub InitializeUiNodeEditor()
         If TabControl1 Is Nothing Then
             Return
+        End If
+
+        If _uiTreeViewModel Is Nothing Then
+            _uiTreeViewModel = New UiTreeViewModel()
+        End If
+
+        If _uiSelectionState Is Nothing Then
+            _uiSelectionState = New SelectionStateViewModel()
         End If
 
         _uiTabPage = New TabPage()
@@ -243,7 +252,7 @@ Public Class Form1
     End Sub
 
     Private Sub UiCanvasControl_NodeBoundsCommitted(sender As Object, e As UiCanvasControl.UiNodeBoundsChangedEventArgs)
-        If _uiSelectedNode Is Nothing OrElse e.Node Is Nothing Then
+        If _uiSelectionState Is Nothing OrElse _uiSelectionState.SelectedNode Is Nothing OrElse e.Node Is Nothing Then
             Return
         End If
 
@@ -260,11 +269,22 @@ Public Class Form1
     End Sub
 
     Private Sub SetSelectedUiNode(node As UiNode, syncTree As Boolean)
-        _uiSelectionSync = True
-        _uiSelectedNode = node
+        If _uiSelectionState Is Nothing Then
+            Return
+        End If
+
+        If syncTree Then
+            _uiSelectionState.BeginSynchronization()
+        End If
+
+        Dim selectedViewModel As UiNodeViewModel = Nothing
+        If _uiTreeViewModel IsNot Nothing Then
+            selectedViewModel = _uiTreeViewModel.FindByModel(node)
+        End If
+        _uiSelectionState.SetSelectedNode(selectedViewModel)
 
         If syncTree AndAlso _uiTreeView IsNot Nothing Then
-            Dim treeNode = FindTreeNode(_uiTreeView.Nodes, node)
+            Dim treeNode = FindTreeNodeByViewModel(_uiTreeView.Nodes, selectedViewModel)
             If treeNode IsNot Nothing Then
                 _uiTreeView.SelectedNode = treeNode
             Else
@@ -273,15 +293,18 @@ Public Class Form1
         End If
 
         If _uiCanvasControl IsNot Nothing Then
-            _uiCanvasControl.SelectedNode = node
+            _uiCanvasControl.SelectedNode = If(selectedViewModel Is Nothing, Nothing, selectedViewModel.Model)
         End If
 
-        _uiSelectionSync = False
+        If syncTree Then
+            _uiSelectionState.EndSynchronization()
+        End If
+
         LoadUiNodeProperties()
     End Sub
 
-    Private Function FindTreeNode(nodes As TreeNodeCollection, target As UiNode) As TreeNode
-        If nodes Is Nothing Then
+    Private Function FindTreeNodeByViewModel(nodes As TreeNodeCollection, target As UiNodeViewModel) As TreeNode
+        If nodes Is Nothing OrElse target Is Nothing Then
             Return Nothing
         End If
 
@@ -290,7 +313,7 @@ Public Class Form1
                 Return node
             End If
 
-            Dim childMatch = FindTreeNode(node.Nodes, target)
+            Dim childMatch = FindTreeNodeByViewModel(node.Nodes, target)
             If childMatch IsNot Nothing Then
                 Return childMatch
             End If
@@ -300,17 +323,31 @@ Public Class Form1
     End Function
 
     Private Sub UiTreeView_AfterSelect(sender As Object, e As TreeViewEventArgs)
-        If _uiSelectionSync Then
+        If _uiSelectionState IsNot Nothing AndAlso _uiSelectionState.IsSynchronizing Then
             Return
         End If
 
-        Dim selected = TryCast(e.Node.Tag, UiNode)
-        SetSelectedUiNode(selected, False)
+        Dim selected = TryCast(e.Node.Tag, UiNodeViewModel)
+        If _uiSelectionState IsNot Nothing Then
+            _uiSelectionState.SetSelectedNode(selected)
+        End If
+        If _uiCanvasControl IsNot Nothing Then
+            _uiCanvasControl.SelectedNode = If(selected Is Nothing, Nothing, selected.Model)
+        End If
+        LoadUiNodeProperties()
     End Sub
 
     Private Sub SyncUiNodeDocumentFromJson(jsonText As String)
         If _uiSuppressSync Then
             Return
+        End If
+
+        If _uiTreeViewModel Is Nothing Then
+            _uiTreeViewModel = New UiTreeViewModel()
+        End If
+
+        If _uiSelectionState Is Nothing Then
+            _uiSelectionState = New SelectionStateViewModel()
         End If
 
         If String.IsNullOrWhiteSpace(jsonText) Then
@@ -322,7 +359,10 @@ Public Class Form1
             Dim document = JObject.Parse(jsonText)
             _uiDocument = New GuiJsonDocument(document)
             Dim rootName = GetUiDocumentDisplayName()
-            _uiRootNode = BuildUiNodeTree(rootName, document, Nothing)
+            _uiRootNode = UiNodeTreeBuilder.Build(rootName, document)
+            If _uiTreeViewModel IsNot Nothing Then
+                _uiTreeViewModel.LoadFromRoot(_uiRootNode)
+            End If
             BindUiTreeView()
             If _uiCanvasControl IsNot Nothing Then
                 _uiCanvasControl.RootNode = _uiRootNode
@@ -339,37 +379,20 @@ Public Class Form1
         Return "Document"
     End Function
 
-    Private Function BuildUiNodeTree(name As String, raw As JObject, parent As UiNode) As UiNode
-        Dim node = New UiNode(name, raw, parent)
-        Dim childrenToken = raw("Children")
-        Dim childrenObject = TryCast(childrenToken, JObject)
-        If childrenObject Is Nothing Then
-            Return node
-        End If
-
-        For Each propertyNode As JProperty In childrenObject.Properties()
-            Dim childObject = TryCast(propertyNode.Value, JObject)
-            If childObject Is Nothing Then
-                Continue For
-            End If
-
-            Dim childNode = BuildUiNodeTree(propertyNode.Name, childObject, node)
-            node.Children.Add(childNode)
-        Next
-
-        Return node
-    End Function
-
     Private Sub BindUiTreeView()
         If _uiTreeView Is Nothing Then
+            Return
+        End If
+
+        If _uiTreeViewModel Is Nothing Then
             Return
         End If
 
         _uiTreeView.BeginUpdate()
         _uiTreeView.Nodes.Clear()
 
-        If _uiRootNode IsNot Nothing Then
-            Dim rootTreeNode = CreateUiTreeNode(_uiRootNode)
+        If _uiTreeViewModel IsNot Nothing AndAlso _uiTreeViewModel.RootNodes.Count > 0 Then
+            Dim rootTreeNode = CreateUiTreeNode(_uiTreeViewModel.RootNodes(0))
             _uiTreeView.Nodes.Add(rootTreeNode)
             rootTreeNode.Expand()
         End If
@@ -378,7 +401,7 @@ Public Class Form1
         ClearUiNodeProperties()
     End Sub
 
-    Private Function CreateUiTreeNode(node As UiNode) As TreeNode
+    Private Function CreateUiTreeNode(node As UiNodeViewModel) As TreeNode
         Dim treeNode = New TreeNode(node.Name)
         treeNode.Tag = node
         For Each child In node.Children
@@ -394,12 +417,17 @@ Public Class Form1
         If _uiCanvasControl IsNot Nothing Then
             _uiCanvasControl.RootNode = Nothing
         End If
+        If _uiTreeViewModel IsNot Nothing Then
+            _uiTreeViewModel.LoadFromRoot(Nothing)
+        End If
         ClearUiNodeProperties()
     End Sub
 
     Private Sub ClearUiNodeProperties()
         _uiPropertyLoading = True
-        _uiSelectedNode = Nothing
+        If _uiSelectionState IsNot Nothing Then
+            _uiSelectionState.SetSelectedNode(Nothing)
+        End If
         If _uiCanvasControl IsNot Nothing Then
             _uiCanvasControl.SelectedNode = Nothing
         End If
@@ -440,69 +468,45 @@ Public Class Form1
     End Sub
 
     Private Sub LoadUiNodeProperties()
-        If _uiSelectedNode Is Nothing Then
+        If _uiSelectionState Is Nothing OrElse _uiSelectionState.SelectedNode Is Nothing Then
             ClearUiNodeProperties()
             Return
         End If
 
         _uiPropertyLoading = True
+        Dim selectedViewModel = _uiSelectionState.SelectedNode
+        selectedViewModel.RefreshFromModel()
 
-        Dim hasBounds = HasUiProperty(_uiSelectedNode, "Bounds")
-        If hasBounds Then
-            _boundsTextBox.Text = GetRawString(_uiSelectedNode, "Bounds")
+        _boundsTextBox.Text = selectedViewModel.BoundsText
+        _dockComboBox.SelectedItem = If(String.IsNullOrWhiteSpace(selectedViewModel.DockText), Nothing, selectedViewModel.DockText)
+        If String.IsNullOrWhiteSpace(selectedViewModel.DockText) Then
+            _dockComboBox.SelectedIndex = -1
         End If
-
-        Dim hasDock = HasUiProperty(_uiSelectedNode, "Dock")
-        If hasDock Then
-            Dim dockValue = _uiSelectedNode.GetDock()
-            If dockValue.HasValue Then
-                _dockComboBox.SelectedItem = dockValue.Value.ToString()
-            Else
-                _dockComboBox.SelectedIndex = -1
-            End If
+        _paddingTextBox.Text = selectedViewModel.PaddingText
+        _marginTextBox.Text = selectedViewModel.MarginText
+        _hiddenCheckBox.Checked = selectedViewModel.Hidden
+        _disabledCheckBox.Checked = selectedViewModel.Disabled
+        _fontNameTextBox.Text = selectedViewModel.FontName
+        Dim fontSize = selectedViewModel.FontSize
+        If fontSize.HasValue Then
+            Dim sizeValue = Math.Min(_fontSizeUpDown.Maximum, Math.Max(_fontSizeUpDown.Minimum, CDec(fontSize.Value)))
+            _fontSizeUpDown.Value = sizeValue
+        Else
+            _fontSizeUpDown.Value = _fontSizeUpDown.Minimum
         End If
+        _textAlignComboBox.Text = selectedViewModel.TextAlign
+        _textColorTextBox.Text = selectedViewModel.TextColor
 
-        Dim hasPadding = HasUiProperty(_uiSelectedNode, "Padding")
-        If hasPadding Then
-            _paddingTextBox.Text = GetRawString(_uiSelectedNode, "Padding")
-        End If
-
-        Dim hasMargin = HasUiProperty(_uiSelectedNode, "Margin")
-        If hasMargin Then
-            _marginTextBox.Text = GetRawString(_uiSelectedNode, "Margin")
-        End If
-
-        Dim hasHidden = HasUiProperty(_uiSelectedNode, "Hidden")
-        If hasHidden Then
-            _hiddenCheckBox.Checked = _uiSelectedNode.GetHidden().GetValueOrDefault(False)
-        End If
-
-        Dim hasDisabled = HasUiProperty(_uiSelectedNode, "Disabled")
-        If hasDisabled Then
-            _disabledCheckBox.Checked = _uiSelectedNode.GetDisabled().GetValueOrDefault(False)
-        End If
-
-        Dim hasFont = HasUiProperty(_uiSelectedNode, "Font")
-        If hasFont Then
-            _fontNameTextBox.Text = _uiSelectedNode.GetFontName()
-            Dim fontSize = _uiSelectedNode.GetFontSize()
-            If fontSize.HasValue Then
-                Dim sizeValue = Math.Min(_fontSizeUpDown.Maximum, Math.Max(_fontSizeUpDown.Minimum, CDec(fontSize.Value)))
-                _fontSizeUpDown.Value = sizeValue
-            End If
-        End If
-
-        Dim hasTextAlign = HasUiProperty(_uiSelectedNode, "TextAlign")
-        If hasTextAlign Then
-            _textAlignComboBox.Text = _uiSelectedNode.GetTextAlign()
-        End If
-
-        Dim hasTextColor = HasUiProperty(_uiSelectedNode, "TextColor")
-        If hasTextColor Then
-            _textColorTextBox.Text = _uiSelectedNode.GetTextColor()
-        End If
-
-        SetPropertyVisibility(hasBounds, hasDock, hasPadding, hasMargin, hasHidden, hasDisabled, hasFont, hasFont, hasTextAlign, hasTextColor)
+        SetPropertyVisibility(selectedViewModel.HasBounds,
+                              selectedViewModel.HasDock,
+                              selectedViewModel.HasPadding,
+                              selectedViewModel.HasMargin,
+                              selectedViewModel.HasHidden,
+                              selectedViewModel.HasDisabled,
+                              selectedViewModel.HasFont,
+                              selectedViewModel.HasFont,
+                              selectedViewModel.HasTextAlign,
+                              selectedViewModel.HasTextColor)
         _uiPropertyLoading = False
     End Sub
 
@@ -537,20 +541,6 @@ Public Class Form1
         End If
     End Sub
 
-    Private Function HasUiProperty(node As UiNode, propertyName As String) As Boolean
-        Dim token = node.Raw(propertyName)
-        Return token IsNot Nothing AndAlso token.Type <> JTokenType.Null
-    End Function
-
-    Private Function GetRawString(node As UiNode, propertyName As String) As String
-        Dim token = node.Raw(propertyName)
-        If token Is Nothing OrElse token.Type = JTokenType.Null Then
-            Return String.Empty
-        End If
-
-        Return token.Value(Of String)()
-    End Function
-
     Private Sub PersistUiNodeChanges()
         If _uiDocument Is Nothing OrElse String.IsNullOrWhiteSpace(openFile) Then
             Return
@@ -568,144 +558,120 @@ Public Class Form1
         End If
     End Sub
 
-    Private Function ParsePaddingValue(value As String, label As String) As Padding
-        If String.IsNullOrWhiteSpace(value) Then
-            Throw New FormatException(String.Format("Invalid {0} value: input cannot be empty.", label))
-        End If
-
-        Dim parts = value.Split(","c)
-        If parts.Length <> 4 Then
-            Throw New FormatException(String.Format("Invalid {0} value: expected 4 parts but got {1}.", label, parts.Length))
-        End If
-
-        Dim parsed(3) As Integer
-        For index = 0 To parts.Length - 1
-            Dim part = parts(index).Trim()
-            Dim parsedValue As Integer
-            If Not Integer.TryParse(part, parsedValue) Then
-                Throw New FormatException(String.Format("Invalid {0} value: '{1}' is not an integer.", label, part))
-            End If
-            parsed(index) = parsedValue
-        Next
-
-        Return New Padding(parsed(0), parsed(1), parsed(2), parsed(3))
-    End Function
-
     Private Sub BoundsTextBox_Leave(sender As Object, e As EventArgs)
-        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+        If _uiPropertyLoading OrElse _uiSelectionState Is Nothing OrElse _uiSelectionState.SelectedNode Is Nothing Then
             Return
         End If
 
-        Try
-            Dim bounds = GuiValueParser.ParseBounds(_boundsTextBox.Text)
-            _uiSelectedNode.SetBounds(bounds)
-            PersistUiNodeChanges()
-        Catch ex As FormatException
-            StatusText("[UI]     " & ex.Message)
+        Dim errorMessage As String = Nothing
+        If Not _uiSelectionState.SelectedNode.TrySetBounds(_boundsTextBox.Text, errorMessage) Then
+            StatusText("[UI]     " & errorMessage)
             LoadUiNodeProperties()
-        End Try
+            Return
+        End If
+
+        PersistUiNodeChanges()
     End Sub
 
     Private Sub DockComboBox_SelectedIndexChanged(sender As Object, e As EventArgs)
-        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+        If _uiPropertyLoading OrElse _uiSelectionState Is Nothing OrElse _uiSelectionState.SelectedNode Is Nothing Then
             Return
         End If
 
         Dim selectedValue = TryCast(_dockComboBox.SelectedItem, String)
-        If String.IsNullOrWhiteSpace(selectedValue) Then
+        Dim errorMessage As String = Nothing
+        If Not _uiSelectionState.SelectedNode.TrySetDock(selectedValue, errorMessage) Then
+            StatusText("[UI]     " & errorMessage)
+            LoadUiNodeProperties()
             Return
         End If
 
-        Dim parsed As DockStyle
-        If [Enum].TryParse(selectedValue, True, parsed) Then
-            _uiSelectedNode.SetDock(parsed)
-            PersistUiNodeChanges()
-        End If
+        PersistUiNodeChanges()
     End Sub
 
     Private Sub PaddingTextBox_Leave(sender As Object, e As EventArgs)
-        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+        If _uiPropertyLoading OrElse _uiSelectionState Is Nothing OrElse _uiSelectionState.SelectedNode Is Nothing Then
             Return
         End If
 
-        Try
-            Dim padding = ParsePaddingValue(_paddingTextBox.Text, "Padding")
-            _uiSelectedNode.SetPadding(padding)
-            PersistUiNodeChanges()
-        Catch ex As FormatException
-            StatusText("[UI]     " & ex.Message)
+        Dim errorMessage As String = Nothing
+        If Not _uiSelectionState.SelectedNode.TrySetPadding(_paddingTextBox.Text, errorMessage) Then
+            StatusText("[UI]     " & errorMessage)
             LoadUiNodeProperties()
-        End Try
+            Return
+        End If
+
+        PersistUiNodeChanges()
     End Sub
 
     Private Sub MarginTextBox_Leave(sender As Object, e As EventArgs)
-        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+        If _uiPropertyLoading OrElse _uiSelectionState Is Nothing OrElse _uiSelectionState.SelectedNode Is Nothing Then
             Return
         End If
 
-        Try
-            Dim margin = ParsePaddingValue(_marginTextBox.Text, "Margin")
-            _uiSelectedNode.SetMargin(margin)
-            PersistUiNodeChanges()
-        Catch ex As FormatException
-            StatusText("[UI]     " & ex.Message)
+        Dim errorMessage As String = Nothing
+        If Not _uiSelectionState.SelectedNode.TrySetMargin(_marginTextBox.Text, errorMessage) Then
+            StatusText("[UI]     " & errorMessage)
             LoadUiNodeProperties()
-        End Try
+            Return
+        End If
+
+        PersistUiNodeChanges()
     End Sub
 
     Private Sub HiddenCheckBox_CheckedChanged(sender As Object, e As EventArgs)
-        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+        If _uiPropertyLoading OrElse _uiSelectionState Is Nothing OrElse _uiSelectionState.SelectedNode Is Nothing Then
             Return
         End If
 
-        _uiSelectedNode.SetHidden(_hiddenCheckBox.Checked)
+        _uiSelectionState.SelectedNode.SetHidden(_hiddenCheckBox.Checked)
         PersistUiNodeChanges()
     End Sub
 
     Private Sub DisabledCheckBox_CheckedChanged(sender As Object, e As EventArgs)
-        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+        If _uiPropertyLoading OrElse _uiSelectionState Is Nothing OrElse _uiSelectionState.SelectedNode Is Nothing Then
             Return
         End If
 
-        _uiSelectedNode.SetDisabled(_disabledCheckBox.Checked)
+        _uiSelectionState.SelectedNode.SetDisabled(_disabledCheckBox.Checked)
         PersistUiNodeChanges()
     End Sub
 
     Private Sub FontNameTextBox_Leave(sender As Object, e As EventArgs)
-        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+        If _uiPropertyLoading OrElse _uiSelectionState Is Nothing OrElse _uiSelectionState.SelectedNode Is Nothing Then
             Return
         End If
 
         Dim fontSize = CDbl(_fontSizeUpDown.Value)
-        _uiSelectedNode.SetFont(_fontNameTextBox.Text, fontSize)
+        _uiSelectionState.SelectedNode.SetFont(_fontNameTextBox.Text, fontSize)
         PersistUiNodeChanges()
     End Sub
 
     Private Sub FontSizeUpDown_ValueChanged(sender As Object, e As EventArgs)
-        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+        If _uiPropertyLoading OrElse _uiSelectionState Is Nothing OrElse _uiSelectionState.SelectedNode Is Nothing Then
             Return
         End If
 
         Dim fontSize = CDbl(_fontSizeUpDown.Value)
-        _uiSelectedNode.SetFont(_fontNameTextBox.Text, fontSize)
+        _uiSelectionState.SelectedNode.SetFont(_fontNameTextBox.Text, fontSize)
         PersistUiNodeChanges()
     End Sub
 
     Private Sub TextAlignComboBox_Changed(sender As Object, e As EventArgs)
-        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+        If _uiPropertyLoading OrElse _uiSelectionState Is Nothing OrElse _uiSelectionState.SelectedNode Is Nothing Then
             Return
         End If
 
-        _uiSelectedNode.SetTextAlign(_textAlignComboBox.Text)
+        _uiSelectionState.SelectedNode.SetTextAlign(_textAlignComboBox.Text)
         PersistUiNodeChanges()
     End Sub
 
     Private Sub TextColorTextBox_Leave(sender As Object, e As EventArgs)
-        If _uiPropertyLoading OrElse _uiSelectedNode Is Nothing Then
+        If _uiPropertyLoading OrElse _uiSelectionState Is Nothing OrElse _uiSelectionState.SelectedNode Is Nothing Then
             Return
         End If
 
-        _uiSelectedNode.SetTextColor(_textColorTextBox.Text)
+        _uiSelectionState.SelectedNode.SetTextColor(_textColorTextBox.Text)
         PersistUiNodeChanges()
     End Sub
 
