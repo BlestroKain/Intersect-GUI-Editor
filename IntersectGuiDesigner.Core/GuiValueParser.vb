@@ -20,6 +20,11 @@ Namespace IntersectGuiDesigner.Core
             Return Color.FromArgb(parts(3), parts(0), parts(1), parts(2))
         End Function
 
+        Public Shared Function ParsePadding(value As String, Optional label As String = "padding") As Padding
+            Dim parts = ParseIntegerParts(value, 4, label)
+            Return New Padding(parts(0), parts(1), parts(2), parts(3))
+        End Function
+
         Public Shared Function SerializeBounds(bounds As Rectangle) As String
             Return String.Format("{0},{1},{2},{3}", bounds.X, bounds.Y, bounds.Width, bounds.Height)
         End Function
@@ -30,6 +35,10 @@ Namespace IntersectGuiDesigner.Core
 
         Public Shared Function SerializeColor(color As Color) As String
             Return String.Format("{0},{1},{2},{3}", color.R, color.G, color.B, color.A)
+        End Function
+
+        Public Shared Function SerializePadding(padding As Padding) As String
+            Return String.Format("{0},{1},{2},{3}", padding.Left, padding.Top, padding.Right, padding.Bottom)
         End Function
 
         Private Shared Function ParseIntegerParts(value As String, expectedParts As Integer, label As String) As Integer()
