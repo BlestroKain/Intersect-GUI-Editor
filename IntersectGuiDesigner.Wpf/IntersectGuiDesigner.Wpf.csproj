@@ -8,7 +8,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\IntersectGuiDesigner.Core\IntersectGuiDesigner.Core.vbproj" />
     <ProjectReference Include="..\IntersectGuiDesigner.DesignerViewModels\IntersectGuiDesigner.DesignerViewModels.csproj" />
+    <ProjectReference Include="..\IntersectGuiDesigner.PythonBridge\IntersectGuiDesigner.PythonBridge.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\IntersectGuiDesigner.PythonBridge\Scripts\render_wireframe.py" Link="Scripts\render_wireframe.py">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>
