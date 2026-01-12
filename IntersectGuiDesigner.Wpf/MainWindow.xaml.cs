@@ -14,11 +14,12 @@ public partial class MainWindow : Window
 {
     public ObservableCollection<UiNodeViewModel> RootNodes { get; } = new();
     private UiNode? _rootNode;
+    private readonly MainWindowViewModel _viewModel = new();
 
     public MainWindow()
     {
         InitializeComponent();
-        DataContext = this;
+        DataContext = _viewModel;
     }
 
     private void OpenJson_OnClick(object sender, RoutedEventArgs e)
@@ -226,5 +227,6 @@ public partial class MainWindow : Window
 
             return new UiNodeViewModel(node.Name, children);
         }
+        _viewModel.LoadFromRoot(rootNode);
     }
 }

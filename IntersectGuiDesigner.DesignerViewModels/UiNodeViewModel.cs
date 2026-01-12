@@ -19,6 +19,10 @@ public sealed class UiNodeViewModel : ViewModelBase
     private double? _fontSize;
     private string _textAlign = string.Empty;
     private string _textColor = string.Empty;
+    private double _boundsX;
+    private double _boundsY;
+    private double _boundsWidth;
+    private double _boundsHeight;
     private bool _hasBounds;
     private bool _hasDock;
     private bool _hasPadding;
@@ -51,61 +55,141 @@ public sealed class UiNodeViewModel : ViewModelBase
     public string BoundsText
     {
         get => _boundsText;
-        private set => SetProperty(ref _boundsText, value);
+        set
+        {
+            if (!SetProperty(ref _boundsText, value))
+            {
+                return;
+            }
+
+            if (!TrySetBounds(value, out _))
+            {
+                RefreshFromModel();
+            }
+        }
     }
 
     public string DockText
     {
         get => _dockText;
-        private set => SetProperty(ref _dockText, value);
+        set
+        {
+            if (!SetProperty(ref _dockText, value))
+            {
+                return;
+            }
+
+            if (!TrySetDock(value, out _))
+            {
+                RefreshFromModel();
+            }
+        }
     }
 
     public string PaddingText
     {
         get => _paddingText;
-        private set => SetProperty(ref _paddingText, value);
+        set
+        {
+            if (!SetProperty(ref _paddingText, value))
+            {
+                return;
+            }
+
+            if (!TrySetPadding(value, out _))
+            {
+                RefreshFromModel();
+            }
+        }
     }
 
     public string MarginText
     {
         get => _marginText;
-        private set => SetProperty(ref _marginText, value);
+        set
+        {
+            if (!SetProperty(ref _marginText, value))
+            {
+                return;
+            }
+
+            if (!TrySetMargin(value, out _))
+            {
+                RefreshFromModel();
+            }
+        }
     }
 
     public bool Hidden
     {
         get => _hidden;
-        private set => SetProperty(ref _hidden, value);
+        set
+        {
+            if (SetProperty(ref _hidden, value))
+            {
+                SetHidden(value);
+            }
+        }
     }
 
     public bool Disabled
     {
         get => _disabled;
-        private set => SetProperty(ref _disabled, value);
+        set
+        {
+            if (SetProperty(ref _disabled, value))
+            {
+                SetDisabled(value);
+            }
+        }
     }
 
     public string FontName
     {
         get => _fontName;
-        private set => SetProperty(ref _fontName, value);
+        set
+        {
+            if (SetProperty(ref _fontName, value))
+            {
+                SetFont(value, FontSize);
+            }
+        }
     }
 
     public double? FontSize
     {
         get => _fontSize;
-        private set => SetProperty(ref _fontSize, value);
+        set
+        {
+            if (SetProperty(ref _fontSize, value))
+            {
+                SetFont(FontName, value);
+            }
+        }
     }
 
     public string TextAlign
     {
         get => _textAlign;
-        private set => SetProperty(ref _textAlign, value);
+        set
+        {
+            if (SetProperty(ref _textAlign, value))
+            {
+                SetTextAlign(value);
+            }
+        }
     }
 
     public string TextColor
     {
         get => _textColor;
-        private set => SetProperty(ref _textColor, value);
+        set
+        {
+            if (SetProperty(ref _textColor, value))
+            {
+                SetTextColor(value);
+            }
+        }
     }
 
     public bool HasBounds
@@ -162,36 +246,67 @@ public sealed class UiNodeViewModel : ViewModelBase
         private set => SetProperty(ref _hasTextColor, value);
     }
 
+    public double BoundsX
+    {
+        get => _boundsX;
+        private set => SetProperty(ref _boundsX, value);
+    }
+
+    public double BoundsY
+    {
+        get => _boundsY;
+        private set => SetProperty(ref _boundsY, value);
+    }
+
+    public double BoundsWidth
+    {
+        get => _boundsWidth;
+        private set => SetProperty(ref _boundsWidth, value);
+    }
+
+    public double BoundsHeight
+    {
+        get => _boundsHeight;
+        private set => SetProperty(ref _boundsHeight, value);
+    }
+
     public void RefreshFromModel()
     {
-        Name = Model.Name;
+        SetProperty(ref _name, Model.Name, nameof(Name));
+
         HasBounds = HasProperty("Bounds");
-        BoundsText = HasBounds ? GetRawString("Bounds") : string.Empty;
+        SetProperty(ref _boundsText, HasBounds ? GetRawString("Bounds") : string.Empty, nameof(BoundsText));
 
         HasDock = HasProperty("Dock");
-        DockText = HasDock ? Model.GetDock()?.ToString() ?? string.Empty : string.Empty;
+        SetProperty(ref _dockText, HasDock ? Model.GetDock()?.ToString() ?? string.Empty : string.Empty, nameof(DockText));
 
         HasPadding = HasProperty("Padding");
-        PaddingText = HasPadding ? GetRawString("Padding") : string.Empty;
+        SetProperty(ref _paddingText, HasPadding ? GetRawString("Padding") : string.Empty, nameof(PaddingText));
 
         HasMargin = HasProperty("Margin");
-        MarginText = HasMargin ? GetRawString("Margin") : string.Empty;
+        SetProperty(ref _marginText, HasMargin ? GetRawString("Margin") : string.Empty, nameof(MarginText));
 
         HasHidden = HasProperty("Hidden");
-        Hidden = HasHidden && Model.GetHidden().GetValueOrDefault(false);
+        SetProperty(ref _hidden, HasHidden && Model.GetHidden().GetValueOrDefault(false), nameof(Hidden));
 
         HasDisabled = HasProperty("Disabled");
-        Disabled = HasDisabled && Model.GetDisabled().GetValueOrDefault(false);
+        SetProperty(ref _disabled, HasDisabled && Model.GetDisabled().GetValueOrDefault(false), nameof(Disabled));
 
         HasFont = HasProperty("Font");
-        FontName = HasFont ? Model.GetFontName() ?? string.Empty : string.Empty;
-        FontSize = HasFont ? Model.GetFontSize() : null;
+        SetProperty(ref _fontName, HasFont ? Model.GetFontName() ?? string.Empty : string.Empty, nameof(FontName));
+        SetProperty(ref _fontSize, HasFont ? Model.GetFontSize() : null, nameof(FontSize));
 
         HasTextAlign = HasProperty("TextAlign");
-        TextAlign = HasTextAlign ? Model.GetTextAlign() ?? string.Empty : string.Empty;
+        SetProperty(ref _textAlign, HasTextAlign ? Model.GetTextAlign() ?? string.Empty : string.Empty, nameof(TextAlign));
 
         HasTextColor = HasProperty("TextColor");
-        TextColor = HasTextColor ? Model.GetTextColor() ?? string.Empty : string.Empty;
+        SetProperty(ref _textColor, HasTextColor ? Model.GetTextColor() ?? string.Empty : string.Empty, nameof(TextColor));
+
+        var bounds = Model.GetBounds();
+        SetProperty(ref _boundsX, bounds?.X ?? 0, nameof(BoundsX));
+        SetProperty(ref _boundsY, bounds?.Y ?? 0, nameof(BoundsY));
+        SetProperty(ref _boundsWidth, bounds?.Width ?? 0, nameof(BoundsWidth));
+        SetProperty(ref _boundsHeight, bounds?.Height ?? 0, nameof(BoundsHeight));
     }
 
     public bool TrySetBounds(string? value, out string? error)
